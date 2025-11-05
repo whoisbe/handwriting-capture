@@ -23,6 +23,11 @@ type Screen = 'home' | 'fontSelector' | 'tracing';
 export default function App() {
   const [screen, setScreen] = useState<Screen>('home');
   const [session, setSession] = useState<TracingSession | null>(null);
+  const [currentCharMetrics, setCurrentCharMetrics] = useState<{
+    advance: number;
+    bounds: [number, number, number, number];
+    baseline: number;
+  } | null>(null);
 
   useEffect(() => {
     const loadedSession = loadSession();
@@ -60,6 +65,25 @@ export default function App() {
       setScreen('tracing');
     }
   };
+
+  // Fetch metrics for current character when entering tracing screen or character changes
+  useEffect(() => {
+    if (screen === 'tracing' && session) {
+      const currentChar = CHARACTER_SET[session.currentIndex || 0];
+      
+      // Try to get metrics from existing session data first
+      if (session.set[currentChar]?.metrics) {
+        setCurrentCharMetrics(session.set[currentChar].metrics);
+      } else {
+        // Fetch metrics from font
+        extractFontMetrics(currentChar, session.font.source).then((metrics) => {
+          if (metrics) {
+            setCurrentCharMetrics(metrics);
+          }
+        });
+      }
+    }
+  }, [screen, session?.currentIndex, session]);
 
   const handleAcceptTrace = async (strokes: Point[][]) => {
     if (!session) return;
@@ -165,6 +189,8 @@ export default function App() {
           onAccept={handleAcceptTrace}
           onExit={handleExitTracing}
           progress={getProgress()}
+          metrics={currentCharMetrics}
+          emSize={session.font.emSize}
         />
       )}
 

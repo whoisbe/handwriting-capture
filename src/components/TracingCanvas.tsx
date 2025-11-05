@@ -2,6 +2,10 @@ import { useEffect, useRef, useState } from 'react';
 import { Check, Undo, X } from 'lucide-react';
 import { Button } from './ui/button';
 import { Point } from '../types/tracing';
+import { 
+  getCharacterBoundsOnCanvas, 
+  constrainPointToCharacter 
+} from '../utils/traceConstraints';
 
 interface TracingCanvasProps {
   character: string;
@@ -10,6 +14,12 @@ interface TracingCanvasProps {
   onAccept: (strokes: Point[][]) => void | Promise<void>;
   onExit: () => void;
   progress: string;
+  metrics: {
+    advance: number;
+    bounds: [number, number, number, number];
+    baseline: number;
+  } | null;
+  emSize: number;
 }
 
 export function TracingCanvas({ 
@@ -18,7 +28,9 @@ export function TracingCanvas({
   fontSource, 
   onAccept, 
   onExit,
-  progress 
+  progress,
+  metrics,
+  emSize
 }: TracingCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isDrawing, setIsDrawing] = useState(false);
@@ -27,6 +39,7 @@ export function TracingCanvas({
   const [startTime, setStartTime] = useState<number>(0);
   const [fontLoaded, setFontLoaded] = useState(false);
   const [modifierKeysPressed, setModifierKeysPressed] = useState(false);
+  const boundsRef = useRef<ReturnType<typeof getCharacterBoundsOnCanvas> | null>(null);
 
   // Reset strokes when character changes
   useEffect(() => {
@@ -101,13 +114,37 @@ export function TracingCanvas({
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    // Draw character outline
+    // Calculate and store bounds if metrics are available
     const fontSize = Math.min(canvas.width, canvas.height) * 0.3;
+    if (metrics) {
+      boundsRef.current = getCharacterBoundsOnCanvas(
+        metrics,
+        { width: canvas.width, height: canvas.height, fontSize },
+        emSize
+      );
+    }
+
+    // Draw character outline
     ctx.font = `${fontSize}px ${fontFamily}`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillStyle = 'rgba(200, 200, 200, 0.3)';
     ctx.fillText(character, canvas.width / 2, canvas.height / 2);
+
+    // Draw bounds rectangle for visual feedback (after character, before strokes)
+    if (boundsRef.current) {
+      ctx.save(); // Save current context state
+      ctx.strokeStyle = 'rgba(59, 130, 246, 0.2)'; // Light blue
+      ctx.lineWidth = 2;
+      ctx.setLineDash([5, 5]);
+      ctx.strokeRect(
+        boundsRef.current.left,
+        boundsRef.current.top,
+        boundsRef.current.right - boundsRef.current.left,
+        boundsRef.current.bottom - boundsRef.current.top
+      );
+      ctx.restore(); // Restore context state
+    }
 
     // Draw all completed strokes
     strokes.forEach((stroke) => {
@@ -118,15 +155,17 @@ export function TracingCanvas({
     if (currentStroke.length > 0) {
       drawStroke(ctx, currentStroke);
     }
-  }, [character, fontFamily, fontLoaded, strokes, currentStroke]);
+  }, [character, fontFamily, fontLoaded, strokes, currentStroke, metrics, emSize]);
 
   const drawStroke = (ctx: CanvasRenderingContext2D, stroke: Point[]) => {
     if (stroke.length === 0) return;
 
+    ctx.save(); // Save context state before drawing
     ctx.strokeStyle = '#000000';
     ctx.lineWidth = 3;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
+    ctx.setLineDash([]); // Ensure no dash pattern
     ctx.beginPath();
 
     stroke.forEach((point, index) => {
@@ -138,6 +177,7 @@ export function TracingCanvas({
     });
 
     ctx.stroke();
+    ctx.restore(); // Restore context state after drawing
   };
 
   const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
@@ -164,8 +204,19 @@ export function TracingCanvas({
     if (!shouldDraw) return;
 
     const rect = canvas.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
+    let x = e.clientX - rect.left;
+    let y = e.clientY - rect.top;
+    
+    const originalX = x;
+    const originalY = y;
+    
+    // Apply constraint if bounds are available
+    if (boundsRef.current) {
+      const constrained = constrainPointToCharacter(x, y, boundsRef.current, 0.2); // Reduced magnet strength
+      x = constrained.x;
+      y = constrained.y;
+    }
+    
     const pressure = e.pressure || 0.5;
     const time = Date.now();
 
@@ -187,8 +238,16 @@ export function TracingCanvas({
     // If not currently drawing but modifiers are held, start drawing
     if (!isDrawing && modifiersHeld) {
       const rect = canvas.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const y = e.clientY - rect.top;
+      let x = e.clientX - rect.left;
+      let y = e.clientY - rect.top;
+      
+      // Apply constraint if bounds are available
+      if (boundsRef.current) {
+        const constrained = constrainPointToCharacter(x, y, boundsRef.current, 0.2); // Reduced magnet strength
+        x = constrained.x;
+        y = constrained.y;
+      }
+      
       const pressure = e.pressure || 0.5;
       const time = Date.now();
 
@@ -215,8 +274,16 @@ export function TracingCanvas({
     if (!isDrawing) return;
 
     const rect = canvas.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
+    let x = e.clientX - rect.left;
+    let y = e.clientY - rect.top;
+    
+    // Apply constraint if bounds are available
+    if (boundsRef.current) {
+      const constrained = constrainPointToCharacter(x, y, boundsRef.current, 0.2); // Reduced magnet strength
+      x = constrained.x;
+      y = constrained.y;
+    }
+    
     const pressure = e.pressure || 0.5;
     const time = Date.now() - startTime;
 
