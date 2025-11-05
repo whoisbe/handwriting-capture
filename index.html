@@ -1,110 +1,15 @@
-<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Handwriting Capture (MVP)</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <!-- Default font: Caveat (can be changed in UI) -->
-  <link id="gf-link" rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Caveat:wght@400&display=swap">
-  <link rel="stylesheet" href="./styles.css" />
-</head>
-<body>
-  <div class="wrap">
-    <header>
-      <h1>✍️ Handwriting Capture (MVP)</h1>
-      <div class="sub">Capture strokes per glyph and preview the reveal immediately.</div>
-    </header>
 
-    <main class="grid">
-      <section class="panel">
-        <div class="head"><strong>Session</strong></div>
-        <div class="body">
-          <label>Font</label>
-          <select id="fontSelect">
-            <option value="Caveat">Caveat (default)</option>
-            <option value="Gloria Hallelujah">Gloria Hallelujah</option>
-            <option value="Patrick Hand">Patrick Hand</option>
-            <option value="Shadows Into Light">Shadows Into Light</option>
-            <option value="Nanum Pen Script">Nanum Pen Script</option>
-          </select>
-          <div class="hint">Loads from Google Fonts; stored locally in session meta.</div>
+  <!DOCTYPE html>
+  <html lang="en">
+    <head>
+      <meta charset="UTF-8" />
+      <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+      <title>Character Tracing App</title>
+    </head>
 
-          <label>Character Set</label>
-          <select id="charSetSelect">
-            <option value="AZaz09basic">A–Z, a–z, 0–9, basic punctuation</option>
-            <option value="AZ">Uppercase only A–Z</option>
-            <option value="az">Lowercase only a–z</option>
-            <option value="09">Digits 0–9</option>
-          </select>
-
-          <button id="newSessionBtn" class="btn primary">New Session</button>
-          <button id="resumeBtn" class="btn">Resume Last</button>
-          <button id="exportBtn" class="btn">Export JSON</button>
-
-          <div class="progress" id="progress">No session.</div>
-        </div>
-      </section>
-
-      <section class="panel">
-        <div class="head"><strong>Capture</strong></div>
-        <div class="body">
-          <div class="toolbar">
-            <div>
-              <button id="undoBtn" class="btn">Undo Stroke</button>
-              <button id="clearBtn" class="btn">Clear</button>
-              <button id="skipBtn" class="btn">Skip</button>
-              <button id="variantBtn" class="btn">Add Variant</button>
-            </div>
-            <div class="right">
-              Opacity <input id="opacityRange" type="range" min="10" max="90" value="30">
-              <button id="previewBtn" class="btn primary">Preview ▶</button>
-              <button id="nextBtn" class="btn">Next ➜</button>
-            </div>
-          </div>
-
-          <div class="stage">
-            <canvas id="captureCanvas"></canvas>
-            <div class="glyphLabel"><span id="glyphLabel">A</span></div>
-          </div>
-          <div class="hint">Draw directly on the canvas. Pen lifts create new strokes. Pressure captured when available.</div>
-        </div>
-      </section>
-
-      <section class="panel">
-        <div class="head"><strong>Immediate Preview (QA)</strong></div>
-        <div class="body">
-          <div class="toolbar">
-            <div>
-              <button id="approveBtn" class="btn primary">Approve ✓</button>
-              <button id="redoBtn" class="btn">Redo ⟲</button>
-            </div>
-            <div class="right">
-              Speed × <select id="speedSel">
-                <option value="0.5">0.5</option>
-                <option value="1" selected>1</option>
-                <option value="1.5">1.5</option>
-                <option value="2">2</option>
-              </select>
-              Width gain <input id="widthGain" type="range" min="0" max="100" value="30">
-              <button id="playBtn" class="btn">Play ▶</button>
-              <button id="pauseBtn" class="btn">Pause ⏸</button>
-            </div>
-          </div>
-          <div class="stage two">
-            <canvas id="templateCanvas"></canvas>
-            <canvas id="previewCanvas"></canvas>
-          </div>
-        </div>
-      </section>
-    </main>
-
-    <footer>
-      <div>Local-only MVP • Autosaves after each stroke • Export anytime</div>
-    </footer>
-  </div>
-
-  <script src="./app.js"></script>
-</body>
-</html>
+    <body>
+      <div id="root"></div>
+      <script type="module" src="/src/main.tsx"></script>
+    </body>
+  </html>
+  
