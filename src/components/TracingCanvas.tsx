@@ -7,7 +7,7 @@ interface TracingCanvasProps {
   character: string;
   fontFamily: string;
   fontSource: string;
-  onAccept: (strokes: Point[][]) => void;
+  onAccept: (strokes: Point[][]) => void | Promise<void>;
   onExit: () => void;
   progress: string;
 }

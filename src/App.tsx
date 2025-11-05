@@ -14,6 +14,7 @@ import {
   createVariantFromStrokes, 
   calculateMetrics 
 } from './utils/strokeProcessor';
+import { extractFontMetrics } from './utils/fontMetrics';
 import { toast } from 'sonner@2.0.3';
 import { Toaster } from './components/ui/sonner';
 
@@ -60,12 +61,19 @@ export default function App() {
     }
   };
 
-  const handleAcceptTrace = (strokes: Point[][]) => {
+  const handleAcceptTrace = async (strokes: Point[][]) => {
     if (!session) return;
 
     const currentChar = CHARACTER_SET[session.currentIndex || 0];
     const variant = createVariantFromStrokes(strokes);
-    const metrics = calculateMetrics(variant.strokes);
+    
+    // Try to extract real font metrics, fallback to calculated metrics
+    let metrics = await extractFontMetrics(currentChar, session.font.source);
+    
+    if (!metrics) {
+      // Fallback to calculated metrics if font metrics extraction fails
+      metrics = calculateMetrics(variant.strokes);
+    }
 
     const updatedSession: TracingSession = {
       ...session,
