@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Check, RotateCcw, X } from 'lucide-react';
+import { Check, Undo, X } from 'lucide-react';
 import { Button } from './ui/button';
 import { Point } from '../types/tracing';
 
@@ -37,32 +37,32 @@ export function TracingCanvas({
 
   // Handle keyboard events for modifier keys
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
+    const updateModifierState = (e: KeyboardEvent) => {
       // Check for Command+Shift (Mac) or Ctrl+Shift (other OS)
       const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
       const modifierPressed = isMac 
         ? (e.metaKey && e.shiftKey) 
         : (e.ctrlKey && e.shiftKey);
       
-      setModifierKeysPressed(modifierPressed);
-    };
-
-    const handleKeyUp = (e: KeyboardEvent) => {
-      // Re-check if modifiers are still pressed after key up
-      const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
-      const modifierPressed = isMac 
-        ? (e.metaKey && e.shiftKey) 
-        : (e.ctrlKey && e.shiftKey);
+      console.log('Key event:', {
+        type: e.type,
+        key: e.key,
+        metaKey: e.metaKey,
+        shiftKey: e.shiftKey,
+        ctrlKey: e.ctrlKey,
+        isMac,
+        modifierPressed
+      });
       
       setModifierKeysPressed(modifierPressed);
     };
 
-    window.addEventListener('keydown', handleKeyDown);
-    window.addEventListener('keyup', handleKeyUp);
+    window.addEventListener('keydown', updateModifierState);
+    window.addEventListener('keyup', updateModifierState);
 
     return () => {
-      window.removeEventListener('keydown', handleKeyDown);
-      window.removeEventListener('keyup', handleKeyUp);
+      window.removeEventListener('keydown', updateModifierState);
+      window.removeEventListener('keyup', updateModifierState);
     };
   }, []);
 
@@ -102,7 +102,7 @@ export function TracingCanvas({
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
     // Draw character outline
-    const fontSize = Math.min(canvas.width, canvas.height) * 0.6;
+    const fontSize = Math.min(canvas.width, canvas.height) * 0.3;
     ctx.font = `${fontSize}px ${fontFamily}`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
@@ -145,7 +145,22 @@ export function TracingCanvas({
     if (!canvas) return;
 
     // Check if drawing should start: either primary button is pressed OR modifier keys are held
-    const shouldDraw = e.button === 0 || modifierKeysPressed;
+    const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+    const modifiersHeld = isMac 
+      ? (e.metaKey && e.shiftKey) 
+      : (e.ctrlKey && e.shiftKey);
+    
+    console.log('Pointer down:', {
+      button: e.button,
+      metaKey: e.metaKey,
+      shiftKey: e.shiftKey,
+      ctrlKey: e.ctrlKey,
+      modifiersHeld,
+      modifierKeysPressed,
+      isMac
+    });
+    
+    const shouldDraw = e.button === 0 || modifiersHeld || modifierKeysPressed;
     if (!shouldDraw) return;
 
     const rect = canvas.getBoundingClientRect();
@@ -160,10 +175,44 @@ export function TracingCanvas({
   };
 
   const handlePointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    if (!isDrawing) return;
-
     const canvas = canvasRef.current;
     if (!canvas) return;
+
+    // Check if modifiers are held for trackpad mode
+    const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+    const modifiersHeld = isMac 
+      ? (e.metaKey && e.shiftKey) 
+      : (e.ctrlKey && e.shiftKey);
+
+    // If not currently drawing but modifiers are held, start drawing
+    if (!isDrawing && modifiersHeld) {
+      const rect = canvas.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      const pressure = e.pressure || 0.5;
+      const time = Date.now();
+
+      console.log('Starting draw from pointer move with modifiers');
+      
+      setIsDrawing(true);
+      setStartTime(time);
+      setCurrentStroke([{ x, y, t: 0, p: pressure }]);
+      return;
+    }
+
+    // If currently drawing but modifiers are released, stop drawing
+    if (isDrawing && !modifiersHeld && e.buttons === 0) {
+      console.log('Stopping draw - modifiers released');
+      setIsDrawing(false);
+      if (currentStroke.length > 0) {
+        setStrokes((prev) => [...prev, currentStroke]);
+        setCurrentStroke([]);
+      }
+      return;
+    }
+
+    // Continue drawing if already drawing
+    if (!isDrawing) return;
 
     const rect = canvas.getBoundingClientRect();
     const x = e.clientX - rect.left;
@@ -184,9 +233,11 @@ export function TracingCanvas({
     }
   };
 
-  const handleRedo = () => {
-    setStrokes([]);
-    setCurrentStroke([]);
+  const handleUndo = () => {
+    if (strokes.length > 0) {
+      // Remove the last stroke
+      setStrokes((prev) => prev.slice(0, -1));
+    }
   };
 
   const handleAccept = () => {
@@ -230,13 +281,13 @@ export function TracingCanvas({
         </Button>
         
         <Button
-          onClick={handleRedo}
+          onClick={handleUndo}
           size="lg"
           variant="outline"
           className="w-14 h-14 rounded-full bg-white shadow-lg"
-          disabled={strokes.length === 0 && currentStroke.length === 0}
+          disabled={strokes.length === 0}
         >
-          <RotateCcw className="w-6 h-6" />
+          <Undo className="w-6 h-6" />
         </Button>
         
         <Button
