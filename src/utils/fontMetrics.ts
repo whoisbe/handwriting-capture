@@ -1,9 +1,22 @@
 import * as fontkit from 'fontkit';
+import opentype from 'opentype.js';
+import { decompress } from 'wawoff2';
 
-interface FontMetrics {
+export interface PathCommand {
+  type: 'M' | 'L' | 'C' | 'Q' | 'Z';
+  x?: number;
+  y?: number;
+  x1?: number;
+  y1?: number;
+  x2?: number;
+  y2?: number;
+}
+
+export interface FontMetrics {
   advance: number;
   bounds: [number, number, number, number];
   baseline: number;
+  pathCommands?: PathCommand[]; // SVG path commands for the character shape
 }
 
 // Cache for loaded fonts
@@ -92,12 +105,20 @@ export async function extractFontMetrics(
 
     // Get the glyph for the character
     const glyphId = font.glyphForCodePoint(character.charCodeAt(0));
+    console.log('Glyph ID for', character, ':', glyphId);
     const glyph = font.getGlyph(glyphId);
     
     if (!glyph) {
       console.warn(`No glyph found for character: ${character}`);
       return null;
     }
+    
+    console.log('Glyph id:', glyph.id);
+    console.log('Glyph type:', glyph.type);
+    console.log('Glyph advanceWidth:', glyph.advanceWidth);
+    console.log('Glyph has cbox:', !!glyph.cbox);
+    console.log('Glyph has path:', !!glyph.path);
+    console.log('Glyph._font:', glyph._font);
 
     // Get glyph metrics
     const advanceWidth = glyph.advanceWidth || 0;
@@ -134,6 +155,12 @@ export async function extractFontMetrics(
     // Get font baseline (descent is negative in font units)
     const descent = font.descent || 0;
     
+    // Extract path commands - for now, return empty array and use visual outline only
+    // Path extraction from WOFF2 fonts is complex and requires decompression
+    // We'll implement this as a future enhancement
+    const pathCommands: PathCommand[] = [];
+    console.log('Path commands extraction skipped for now');
+    
     // Fontkit returns coordinates in font units
     return {
       advance: Math.round(advanceWidth),
@@ -142,8 +169,9 @@ export async function extractFontMetrics(
         Math.round(minY),
         Math.round(maxX),
         Math.round(maxY),
-      ],
+      ] as [number, number, number, number],
       baseline: Math.round(descent),
+      pathCommands: pathCommands.length > 0 ? pathCommands : undefined,
     };
   } catch (error) {
     console.error('Error extracting font metrics:', error);

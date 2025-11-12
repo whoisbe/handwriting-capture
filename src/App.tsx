@@ -14,7 +14,7 @@ import {
   createVariantFromStrokes, 
   calculateMetrics 
 } from './utils/strokeProcessor';
-import { extractFontMetrics } from './utils/fontMetrics';
+import { extractFontMetrics, FontMetrics } from './utils/fontMetrics';
 import { toast } from 'sonner@2.0.3';
 import { Toaster } from './components/ui/sonner';
 
@@ -23,11 +23,7 @@ type Screen = 'home' | 'fontSelector' | 'tracing';
 export default function App() {
   const [screen, setScreen] = useState<Screen>('home');
   const [session, setSession] = useState<TracingSession | null>(null);
-  const [currentCharMetrics, setCurrentCharMetrics] = useState<{
-    advance: number;
-    bounds: [number, number, number, number];
-    baseline: number;
-  } | null>(null);
+  const [currentCharMetrics, setCurrentCharMetrics] = useState<FontMetrics | null>(null);
 
   useEffect(() => {
     const loadedSession = loadSession();
@@ -71,14 +67,31 @@ export default function App() {
     if (screen === 'tracing' && session) {
       const currentChar = CHARACTER_SET[session.currentIndex || 0];
       
-      // Try to get metrics from existing session data first
-      if (session.set[currentChar]?.metrics) {
-        setCurrentCharMetrics(session.set[currentChar].metrics);
+      // Check if we have valid cached metrics
+      const cachedMetrics = session.set[currentChar]?.metrics;
+      const hasValidMetrics = cachedMetrics && 
+        cachedMetrics.bounds && 
+        cachedMetrics.bounds.length === 4 &&
+        // Check if bounds are not all zeros (invalid placeholder)
+        (cachedMetrics.bounds[0] !== 0 || cachedMetrics.bounds[1] !== 0 || 
+         cachedMetrics.bounds[2] !== 0 || cachedMetrics.bounds[3] !== 0);
+      
+      if (hasValidMetrics) {
+        console.log('Using cached metrics for', currentChar, cachedMetrics);
+        setCurrentCharMetrics(cachedMetrics);
       } else {
-        // Fetch metrics from font
+        // Fetch metrics from font (either no cache or invalid cache)
+        console.log('Fetching metrics for', currentChar);
         extractFontMetrics(currentChar, session.font.source).then((metrics) => {
           if (metrics) {
+            console.log('Extracted metrics for', currentChar, {
+              bounds: metrics.bounds,
+              pathCommandsCount: metrics.pathCommands?.length || 0
+            });
             setCurrentCharMetrics(metrics);
+          } else {
+            console.warn('Failed to extract metrics for', currentChar);
+            setCurrentCharMetrics(null);
           }
         });
       }

@@ -1,11 +1,22 @@
 /**
- * Utilities for constraining tracing to character bounds with magnetic pull toward center
+ * Utilities for constraining tracing to actual character shape
  */
+
+interface PathCommand {
+  type: 'M' | 'L' | 'C' | 'Q' | 'Z';
+  x?: number;
+  y?: number;
+  x1?: number;
+  y1?: number;
+  x2?: number;
+  y2?: number;
+}
 
 interface CharacterMetrics {
   advance: number;
   bounds: [number, number, number, number]; // [minX, minY, maxX, maxY] in font units
   baseline: number;
+  pathCommands?: PathCommand[];
 }
 
 interface CanvasDimensions {
@@ -26,156 +37,174 @@ function fontUnitsToPixels(
 }
 
 /**
- * Gets the character bounds in canvas coordinates
+ * Creates a Canvas Path2D from font path commands, positioned at canvas center
  */
-export function getCharacterBoundsOnCanvas(
+export function createCharacterPath(
   metrics: CharacterMetrics,
-  canvas: CanvasDimensions,
-  emSize: number = 1000
-): {
-  left: number;
-  top: number;
-  right: number;
-  bottom: number;
-  centerX: number;
-  centerY: number;
-  width: number;
-  height: number;
-} {
+  canvasWidth: number,
+  canvasHeight: number,
+  fontSize: number,
+  unitsPerEm: number = 1000
+): Path2D | null {
+  if (!metrics.pathCommands || metrics.pathCommands.length === 0) {
+    return null;
+  }
+
+  const path = new Path2D();
+  const centerX = canvasWidth / 2;
+  const centerY = canvasHeight / 2;
+
+  // Calculate character dimensions in pixels
   const [minX, minY, maxX, maxY] = metrics.bounds;
-  
-  // Convert font units to pixels
-  const pixelMinX = fontUnitsToPixels(minX, canvas.fontSize, emSize);
-  const pixelMinY = fontUnitsToPixels(minY, canvas.fontSize, emSize);
-  const pixelMaxX = fontUnitsToPixels(maxX, canvas.fontSize, emSize);
-  const pixelMaxY = fontUnitsToPixels(maxY, canvas.fontSize, emSize);
-  
-  // Calculate bounds width and height
-  const boundsWidth = pixelMaxX - pixelMinX;
-  const boundsHeight = pixelMaxY - pixelMinY;
-  
-  // Center the character on canvas
-  const centerX = canvas.width / 2;
-  const centerY = canvas.height / 2;
-  
-  // In font coordinates, Y increases upward, but canvas Y increases downward
-  // So we need to flip the Y coordinates
-  const left = centerX + pixelMinX;
-  const right = centerX + pixelMaxX;
-  const top = centerY - pixelMaxY; // Flip Y
-  const bottom = centerY - pixelMinY; // Flip Y
-  
-  const result = {
-    left,
-    top,
-    right,
-    bottom,
-    centerX,
-    centerY,
-    width: boundsWidth,
-    height: boundsHeight,
+  const boundsWidth = fontUnitsToPixels(maxX - minX, fontSize, unitsPerEm);
+  const boundsHeight = fontUnitsToPixels(maxY - minY, fontSize, unitsPerEm);
+
+  // Convert font coordinates to canvas coordinates (centered)
+  const toCanvasX = (fontX: number) => {
+    const pixelX = fontUnitsToPixels(fontX, fontSize, unitsPerEm);
+    const relativeX = pixelX - fontUnitsToPixels(minX, fontSize, unitsPerEm);
+    return centerX - boundsWidth / 2 + relativeX;
   };
-  
-  return result;
+
+  const toCanvasY = (fontY: number) => {
+    const pixelY = fontUnitsToPixels(fontY, fontSize, unitsPerEm);
+    const relativeY = pixelY - fontUnitsToPixels(minY, fontSize, unitsPerEm);
+    // Flip Y axis (font coordinates have Y increasing upward)
+    return centerY + boundsHeight / 2 - relativeY;
+  };
+
+  // Build the path from commands
+  for (const cmd of metrics.pathCommands) {
+    switch (cmd.type) {
+      case 'M':
+        if (cmd.x !== undefined && cmd.y !== undefined) {
+          path.moveTo(toCanvasX(cmd.x), toCanvasY(cmd.y));
+        }
+        break;
+      case 'L':
+        if (cmd.x !== undefined && cmd.y !== undefined) {
+          path.lineTo(toCanvasX(cmd.x), toCanvasY(cmd.y));
+        }
+        break;
+      case 'Q':
+        if (cmd.x1 !== undefined && cmd.y1 !== undefined && 
+            cmd.x !== undefined && cmd.y !== undefined) {
+          path.quadraticCurveTo(
+            toCanvasX(cmd.x1), toCanvasY(cmd.y1),
+            toCanvasX(cmd.x), toCanvasY(cmd.y)
+          );
+        }
+        break;
+      case 'C':
+        if (cmd.x1 !== undefined && cmd.y1 !== undefined && 
+            cmd.x2 !== undefined && cmd.y2 !== undefined &&
+            cmd.x !== undefined && cmd.y !== undefined) {
+          path.bezierCurveTo(
+            toCanvasX(cmd.x1), toCanvasY(cmd.y1),
+            toCanvasX(cmd.x2), toCanvasY(cmd.y2),
+            toCanvasX(cmd.x), toCanvasY(cmd.y)
+          );
+        }
+        break;
+      case 'Z':
+        path.closePath();
+        break;
+    }
+  }
+
+  return path;
 }
 
 /**
- * Constrains a point to stay within character bounds with magnetic pull toward center
- * @param x - Input x coordinate (canvas pixels)
- * @param y - Input y coordinate (canvas pixels)
- * @param bounds - Character bounds on canvas
- * @param magnetStrength - Strength of pull toward center (0-1), default 0.3
- * @param padding - Padding inside bounds in pixels, default 10
+ * Tests if a point is inside the character path
+ * Returns true if inside, false otherwise
+ */
+export function isPointInCharacter(
+  x: number,
+  y: number,
+  characterPath: Path2D,
+  ctx: CanvasRenderingContext2D
+): boolean {
+  return ctx.isPointInPath(characterPath, x, y);
+}
+
+/**
+ * Finds the nearest point on the character path boundary
+ * This is a simplified approach - for better accuracy, you'd need more sophisticated algorithms
  */
 export function constrainPointToCharacter(
   x: number,
   y: number,
-  bounds: ReturnType<typeof getCharacterBoundsOnCanvas>,
-  magnetStrength: number = 0.3,
-  padding: number = 10
+  characterPath: Path2D,
+  ctx: CanvasRenderingContext2D,
+  metrics: CharacterMetrics,
+  canvasWidth: number,
+  canvasHeight: number,
+  fontSize: number,
+  unitsPerEm: number = 1000
 ): { x: number; y: number } {
-  // Validate bounds - if invalid, return original point
-  if (!isFinite(bounds.left) || !isFinite(bounds.right) || 
-      !isFinite(bounds.top) || !isFinite(bounds.bottom) ||
-      bounds.right <= bounds.left || bounds.bottom <= bounds.top) {
-    console.warn('Invalid bounds detected, skipping constraint:', bounds);
+  // If point is inside the character, allow it
+  if (ctx.isPointInPath(characterPath, x, y)) {
     return { x, y };
   }
+
+  // Point is outside - find nearest point on the boundary
+  // This is a simplified approach: project toward character center
+  const centerX = canvasWidth / 2;
+  const centerY = canvasHeight / 2;
+
+  // Calculate bounds for fallback
+  const [minX, minY, maxX, maxY] = metrics.bounds;
+  const boundsWidth = fontUnitsToPixels(maxX - minX, fontSize, unitsPerEm);
+  const boundsHeight = fontUnitsToPixels(maxY - minY, fontSize, unitsPerEm);
   
-  // Apply padding to bounds
-  const paddedLeft = bounds.left + padding;
-  const paddedRight = bounds.right - padding;
-  const paddedTop = bounds.top + padding;
-  const paddedBottom = bounds.bottom - padding;
+  const left = centerX - boundsWidth / 2;
+  const right = centerX + boundsWidth / 2;
+  const top = centerY - boundsHeight / 2;
+  const bottom = centerY + boundsHeight / 2;
+
+  // Simple approach: binary search along the line from point to center
+  let testX = x;
+  let testY = y;
+  let steps = 20; // Number of interpolation steps
   
-  // Check if padded bounds are still valid
-  if (paddedRight <= paddedLeft || paddedBottom <= paddedTop) {
-    console.warn('Padded bounds are invalid, using original bounds');
-    return { x, y };
+  for (let i = 0; i < steps; i++) {
+    testX = x + (centerX - x) * (i / steps);
+    testY = y + (centerY - y) * (i / steps);
+    
+    if (ctx.isPointInPath(characterPath, testX, testY)) {
+      return { x: testX, y: testY };
+    }
   }
-  
-  // First, constrain to bounds (hard constraint)
-  let constrainedX = Math.max(paddedLeft, Math.min(paddedRight, x));
-  let constrainedY = Math.max(paddedTop, Math.min(paddedBottom, y));
-  
-  // Apply magnetic pull toward center if enabled (soft constraint)
-  if (magnetStrength > 0) {
-    // Calculate distance from center
-    const dx = constrainedX - bounds.centerX;
-    const dy = constrainedY - bounds.centerY;
-    
-    // The further from center, the stronger the pull
-    const distanceFromCenter = Math.sqrt(dx * dx + dy * dy);
-    const maxDistance = Math.sqrt(
-      Math.pow(bounds.width / 2, 2) + Math.pow(bounds.height / 2, 2)
-    );
-    
-    // Normalize distance (0 at center, 1 at edges)
-    const normalizedDistance = Math.min(distanceFromCenter / maxDistance, 1);
-    
-    // Apply quadratic falloff for more natural feel
-    // Stronger pull as you move away from center
-    const pullFactor = magnetStrength * normalizedDistance * normalizedDistance;
-    
-    // Pull toward center
-    constrainedX -= dx * pullFactor;
-    constrainedY -= dy * pullFactor;
-  }
-  
-  return { x: constrainedX, y: constrainedY };
+
+  // Fallback: constrain to bounding box
+  return {
+    x: Math.max(left, Math.min(right, x)),
+    y: Math.max(top, Math.min(bottom, y))
+  };
 }
 
 /**
- * Applies smoothing to a series of constrained points to reduce jitter
+ * Gets the character bounds rectangle (for debugging/visualization)
  */
-export function smoothConstrainedPoints(
-  points: Array<{ x: number; y: number }>,
-  windowSize: number = 3
-): Array<{ x: number; y: number }> {
-  if (points.length < windowSize) return points;
-  
-  const smoothed: Array<{ x: number; y: number }> = [];
-  
-  for (let i = 0; i < points.length; i++) {
-    if (i < windowSize - 1) {
-      // Not enough previous points for full window
-      smoothed.push(points[i]);
-      continue;
-    }
-    
-    // Average over the window
-    let sumX = 0;
-    let sumY = 0;
-    for (let j = 0; j < windowSize; j++) {
-      sumX += points[i - j].x;
-      sumY += points[i - j].y;
-    }
-    
-    smoothed.push({
-      x: sumX / windowSize,
-      y: sumY / windowSize,
-    });
-  }
-  
-  return smoothed;
+export function getCharacterBoundsOnCanvas(
+  metrics: CharacterMetrics,
+  canvasWidth: number,
+  canvasHeight: number,
+  fontSize: number,
+  unitsPerEm: number = 1000
+): { left: number; top: number; right: number; bottom: number } {
+  const centerX = canvasWidth / 2;
+  const centerY = canvasHeight / 2;
+
+  const [minX, minY, maxX, maxY] = metrics.bounds;
+  const boundsWidth = fontUnitsToPixels(maxX - minX, fontSize, unitsPerEm);
+  const boundsHeight = fontUnitsToPixels(maxY - minY, fontSize, unitsPerEm);
+
+  return {
+    left: centerX - boundsWidth / 2,
+    top: centerY - boundsHeight / 2,
+    right: centerX + boundsWidth / 2,
+    bottom: centerY + boundsHeight / 2,
+  };
 }

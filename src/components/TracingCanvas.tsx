@@ -3,7 +3,7 @@ import { Check, Undo, X } from 'lucide-react';
 import { Button } from './ui/button';
 import { Point } from '../types/tracing';
 import { 
-  getCharacterBoundsOnCanvas, 
+  createCharacterPath,
   constrainPointToCharacter 
 } from '../utils/traceConstraints';
 
@@ -18,6 +18,15 @@ interface TracingCanvasProps {
     advance: number;
     bounds: [number, number, number, number];
     baseline: number;
+    pathCommands?: Array<{
+      type: 'M' | 'L' | 'C' | 'Q' | 'Z';
+      x?: number;
+      y?: number;
+      x1?: number;
+      y1?: number;
+      x2?: number;
+      y2?: number;
+    }>;
   } | null;
   emSize: number;
 }
@@ -39,7 +48,8 @@ export function TracingCanvas({
   const [startTime, setStartTime] = useState<number>(0);
   const [fontLoaded, setFontLoaded] = useState(false);
   const [modifierKeysPressed, setModifierKeysPressed] = useState(false);
-  const boundsRef = useRef<ReturnType<typeof getCharacterBoundsOnCanvas> | null>(null);
+  const characterPathRef = useRef<Path2D | null>(null);
+  const ctxRef = useRef<CanvasRenderingContext2D | null>(null);
 
   // Reset strokes when character changes
   useEffect(() => {
@@ -114,36 +124,45 @@ export function TracingCanvas({
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    // Calculate and store bounds if metrics are available
+    // Store context reference
+    ctxRef.current = ctx;
+
+    // Calculate font size and create character path if metrics are available
     const fontSize = Math.min(canvas.width, canvas.height) * 0.3;
-    if (metrics) {
-      boundsRef.current = getCharacterBoundsOnCanvas(
+    console.log('TracingCanvas render:', {
+      hasMetrics: !!metrics,
+      hasPathCommands: !!(metrics?.pathCommands),
+      pathCommandsCount: metrics?.pathCommands?.length || 0
+    });
+    
+    if (metrics && metrics.pathCommands) {
+      characterPathRef.current = createCharacterPath(
         metrics,
-        { width: canvas.width, height: canvas.height, fontSize },
+        canvas.width,
+        canvas.height,
+        fontSize,
         emSize
       );
-    }
 
-    // Draw character outline
-    ctx.font = `${fontSize}px ${fontFamily}`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillStyle = 'rgba(200, 200, 200, 0.3)';
-    ctx.fillText(character, canvas.width / 2, canvas.height / 2);
+      console.log('Created character path:', !!characterPathRef.current);
 
-    // Draw bounds rectangle for visual feedback (after character, before strokes)
-    if (boundsRef.current) {
-      ctx.save(); // Save current context state
-      ctx.strokeStyle = 'rgba(59, 130, 246, 0.2)'; // Light blue
-      ctx.lineWidth = 2;
-      ctx.setLineDash([5, 5]);
-      ctx.strokeRect(
-        boundsRef.current.left,
-        boundsRef.current.top,
-        boundsRef.current.right - boundsRef.current.left,
-        boundsRef.current.bottom - boundsRef.current.top
-      );
-      ctx.restore(); // Restore context state
+      // Draw the character outline as a guide
+      if (characterPathRef.current) {
+        ctx.save();
+        ctx.strokeStyle = 'rgba(59, 130, 246, 0.3)'; // Light blue outline
+        ctx.lineWidth = 2;
+        ctx.setLineDash([5, 5]);
+        ctx.stroke(characterPathRef.current);
+        console.log('Drew character outline');
+        ctx.restore();
+      }
+    } else {
+      // Fallback: draw character as text if path commands not available
+      ctx.font = `${fontSize}px ${fontFamily}`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = 'rgba(200, 200, 200, 0.3)';
+      ctx.fillText(character, canvas.width / 2, canvas.height / 2);
     }
 
     // Draw all completed strokes
@@ -207,12 +226,18 @@ export function TracingCanvas({
     let x = e.clientX - rect.left;
     let y = e.clientY - rect.top;
     
-    const originalX = x;
-    const originalY = y;
-    
-    // Apply constraint if bounds are available
-    if (boundsRef.current) {
-      const constrained = constrainPointToCharacter(x, y, boundsRef.current, 0.2); // Reduced magnet strength
+    // Apply constraint if character path is available
+    if (characterPathRef.current && ctxRef.current && metrics) {
+      const constrained = constrainPointToCharacter(
+        x, y,
+        characterPathRef.current,
+        ctxRef.current,
+        metrics,
+        canvas.width,
+        canvas.height,
+        Math.min(canvas.width, canvas.height) * 0.3,
+        emSize
+      );
       x = constrained.x;
       y = constrained.y;
     }
@@ -241,9 +266,18 @@ export function TracingCanvas({
       let x = e.clientX - rect.left;
       let y = e.clientY - rect.top;
       
-      // Apply constraint if bounds are available
-      if (boundsRef.current) {
-        const constrained = constrainPointToCharacter(x, y, boundsRef.current, 0.2); // Reduced magnet strength
+      // Apply constraint if character path is available
+      if (characterPathRef.current && ctxRef.current && metrics) {
+        const constrained = constrainPointToCharacter(
+          x, y,
+          characterPathRef.current,
+          ctxRef.current,
+          metrics,
+          canvas.width,
+          canvas.height,
+          Math.min(canvas.width, canvas.height) * 0.3,
+          emSize
+        );
         x = constrained.x;
         y = constrained.y;
       }
@@ -277,9 +311,18 @@ export function TracingCanvas({
     let x = e.clientX - rect.left;
     let y = e.clientY - rect.top;
     
-    // Apply constraint if bounds are available
-    if (boundsRef.current) {
-      const constrained = constrainPointToCharacter(x, y, boundsRef.current, 0.2); // Reduced magnet strength
+    // Apply constraint if character path is available
+    if (characterPathRef.current && ctxRef.current && metrics) {
+      const constrained = constrainPointToCharacter(
+        x, y,
+        characterPathRef.current,
+        ctxRef.current,
+        metrics,
+        canvas.width,
+        canvas.height,
+        Math.min(canvas.width, canvas.height) * 0.3,
+        emSize
+      );
       x = constrained.x;
       y = constrained.y;
     }
